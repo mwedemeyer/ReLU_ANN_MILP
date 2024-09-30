@@ -39,9 +39,9 @@ class PyomoModelingInterface(ModelingInterface):
         ----------
         input_vars: List of pyomo.Var describing the input vector to the network. Have to be defined in the parent model
         opt_model: Parent optimization model containing the input_vars
-        """ 
+        """
         for v in input_vars:
-            assert(v.parent_block() == opt_model)
+            assert (v.parent_block() == opt_model)
         self._ann_model = opt_model
         self._input = input_vars
 
@@ -54,10 +54,10 @@ class PyomoModelingInterface(ModelingInterface):
         output_vars: List of pyo.Var describing the output (vector) of the ANN.
         """
         for v in output_vars:
-            assert(v.parent_block() == self._ann_model)
-        if(opt_model != self._ann_model):
+            assert (v.parent_block() == self._ann_model)
+        if (opt_model != self._ann_model):
             print('Warning: The specified parent block is incorrect. This can be indicative of a modeling error.')
-            
+
         self._output = output_vars
 
     def embed_network_formulation(self, opt_model: pyo.Block, ann_param: AnnParameters,

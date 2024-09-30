@@ -1,4 +1,4 @@
-import tensorflow as tf
+import torch
 import numpy as np
 
 from .utils.storage import AnnParameters
@@ -12,21 +12,21 @@ class AnnModel:
     in the Pyomo or  Gurobi modelling languages.
     """
 
-    def __init__(self, tf_model: tf.keras.Sequential, modeling_language: str, name: str = "ANN") -> None:
-        """An AnnModel is constructed for a specific tensorflow.keras.Sequential model and the desired modelling
-        Interface (eg. pyomo). The interface is initialized and weights and biases are extracted from the tensorflow
+    def __init__(self, torch_model: torch.nn.Sequential, modeling_language: str, name: str = "ANN") -> None:
+        """An AnnModel is constructed for a specific torch.nn.Sequential model and the desired modelling
+        Interface (eg. pyomo). The interface is initialized and weights and biases are extracted from the torch
         model.
 
         Parameters
         ----------
-        tf_model: tensorflow Sequential model with layer type Dense using ReLU activation.
+        torch_model: torch Sequential model with layer type Dense using ReLU activation.
         modeling_language: Optimization modelling language that the model will be written in (eg. 'PYOMO', 'GUROBI').
         name: String describing the ANN.
         """
-        self._network_type_check(tf_model)
+        self._network_type_check(torch_model)
         self.name = name
         self._modelingInterface = InterfaceFactory().create(modeling_language, name)
-        self.networkParam = self._init_network_param(tf_model)
+        self.networkParam = self._init_network_param(torch_model)
         self._inputIsConnected = False
         self._outputIsConnected = False
         self._paramIsLoaded = False
@@ -70,7 +70,7 @@ class AnnModel:
             self._modelingInterface.type_check(var, "variable")
         if len(output_vars) != self.networkParam.output_dim:
             raise Exception('The specified output dimension is not equal to the one implied by the currently loaded '
-                            'tensorflow model')
+                            'torch model')
 
         self.networkParam.output_bounds = self._modelingInterface.get_variable_bounds(output_vars)
         # TODO: fbbt_backward_pass(self.network_param, output_bounds) - see Grimstad et. al Appendix
@@ -150,22 +150,22 @@ class AnnModel:
                     self.networkParam.UB[-1][i] = self.networkParam.output_bounds[i, 1]
 
     @staticmethod
-    def _init_network_param(tf_model: tf.keras.Sequential) -> AnnParameters:
-        """Extracts weights and biases from tensorflow model.
+    def _init_network_param(torch_model: torch.nn.Sequential) -> AnnParameters:
+        """Extracts weights and biases from torch model.
 
         Parameters
         ----------
-        tf_model : tensorflow Sequential model with layer type Dense using ReLU activation.
+        torch_model : torch Sequential model with layers of type Linear and ReLU activation.
 
         Returns
         -------
         NetworkParam : AnnParameters object storing all necessary ANN parameters
         """
-        nn_params = tf_model.get_weights()
-        bias = nn_params[1::2]
+
+        bias = [x.bias.detach().numpy().T for x in torch_model if isinstance(x, torch.nn.Linear)]
         for bi in bias:
             bi.shape = (len(bi), 1)
-        weights = nn_params[0::2]
+        weights = [x.weight.detach().numpy().T for x in torch_model if isinstance(x, torch.nn.Linear)]
         n_layers = len(bias) + 1
         nodes_per_layer = np.array([np.shape(weights[i])[0] for i in range(len(weights))] + [len(bias[-1])])
         # Big-M values
@@ -183,22 +183,22 @@ class AnnModel:
         return network_param
 
     @staticmethod
-    def _network_type_check(tf_model: tf.keras.Sequential) -> None:
-        """Checks if tensorflow model has correct specifications
+    def _network_type_check(torch_model: torch.nn.Sequential) -> None:
+        """Checks if torch model has correct specifications
 
         Parameters
         ----------
-        tf_model : tensorflow Sequential model with Dense layers using ReLU activation.
+        torch_model : torch Sequential model with Dense layers using ReLU activation.
         -------
 
         """
-        if len(tf_model.layers) < 2:
-            print('Warning: The tensorflow model does not appear to contain any hidden layers. This will lead to undefined behaviour.')
-        for idx, layer in enumerate(tf_model.layers[:-1]):
-            if not isinstance(layer, tf.keras.layers.Dense):
-                raise Exception('Layer ' + str(idx) + ' of tensorflow model is not dense.')
-            if layer.activation.__name__ != 'relu':
-                raise Exception('Layer ' + str(idx) + ' of tensorflow model does not have ReLU activation')
+        if not isinstance(torch_model, torch.nn.Sequential):
+            raise Exception('Model is not of type torch.nn.Sequential.')
+        if sum(isinstance(x, torch.nn.Linear) for x in torch_model) < 3:
+            print('Warning: The torch model does not appear to contain any hidden layers. This will lead to undefined behaviour.')
+        for idx, layer in enumerate(torch_model):
+            if not (isinstance(layer, torch.nn.Linear) or isinstance(layer, torch.nn.ReLU)):
+                raise Exception('Layer ' + str(idx) + ' of torch model is not Linear or ReLU.')
 
     def _node_redundancy_check(self) -> None:
         """
@@ -222,15 +222,15 @@ class AnnModel:
         """
         np.save(filename + '.npy', [self.networkParam.M_plus, self.networkParam.M_minus], allow_pickle=True)
 
-    def load_param(self, tf_model: tf.keras.Sequential, filename: str) -> None:
+    def load_param(self, torch_model: torch.nn.Sequential, filename: str) -> None:
         """
         Loads ANN variable bounds from .npy file generated by save_param.
         Parameters
         ----------
-        tf_model: The tensorflow model associated with the save parameters.
+        torch_model: The torch model associated with the save parameters.
         filename: File path of saved parameters.
         """
-        self._init_network_param(tf_model)
+        self._init_network_param(torch_model)
         data = np.load(filename, allow_pickle=True)
         self.networkParam.M_plus = data[0]
         self.networkParam.M_minus = data[1]
