@@ -321,6 +321,4 @@ class PyomoModelingInterface(ModelingInterface):
         if type_str == "model":
             assert (isinstance(obj, pyo.ConcreteModel) or isinstance(obj, pyo.Block))
         elif type_str == "variable":
-            assert (isinstance(obj, pyo.Var))
-
-
+            assert (isinstance(obj, pyo.Var) or isinstance(obj, pyo.base.var.VarData))
